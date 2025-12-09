@@ -1,0 +1,136 @@
+generator client {
+  provider        = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["fnmemberlist","sys_user"]
+}
+
+model fnmember {
+  id             String     @id @default(cuid())
+  created        DateTime   @default(now())
+  updated        DateTime   @default(now()) @updatedAt
+  birthdate      DateTime   @db.Date
+  first_name     String
+  last_name      String
+  t_number       String     @unique
+  activated      ActivationStatus @default(NONE)
+  deceased       String?
+  profile        Profile[]
+  barcode        Barcode[]
+  family         Family[]
+  @@schema("fnmemberlist")
+}
+
+enum ActivationStatus {
+  NONE
+  PENDING
+  ACTIVATED
+  
+  @@schema("fnmemberlist")
+}
+
+model Profile{
+  id           String  @id @default(cuid())
+  created      DateTime @default(now())
+  updated      DateTime @default(now()) @updatedAt
+  gender       String?
+  o_r_status   String
+  community    String
+  address      String
+  phone_number String
+  email        String
+  image_url    String?
+  fnmemberId   String?
+  fnmember     fnmember? @relation(fields: [fnmemberId], references: [id], onDelete: Cascade)
+  @@schema("fnmemberlist")
+}
+
+model Barcode {
+  id         String   @id @default(cuid())
+  created    DateTime @default(now())
+  updated    DateTime @default(now()) @updatedAt
+  barcode    String
+  activated  Int   @default(1)  
+  fnmemberId String?
+  fnmember   fnmember? @relation(fields: [fnmemberId], references: [id], onDelete: Cascade)
+  @@schema("fnmemberlist")
+}
+
+model Family {
+  id          String   @id @default(cuid())
+  created     DateTime @default(now())
+  updated     DateTime @default(now()) @updatedAt
+  spouse_fname String?
+  spouse_lname  String?
+  dependents  Int       @default(0)
+  fnmemberId String?
+  fnmember   fnmember? @relation(fields: [fnmemberId], references: [id], onDelete: Cascade)
+  @@schema("fnmemberlist")
+}
+
+// System users like staff and chief and council
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  password      String
+  first_name    String
+  last_name     String
+  created       DateTime       @default(now())
+  department    Department     @default(OFFICE_ADMIN)
+  role          UserRole       @default(ADMIN)
+  
+  // Authentication fields
+  pin           String?        // 4-digit PIN for password reset
+  pinExpiresAt  DateTime?      // PIN expiration time
+  lastLogin     DateTime?      // Track last login
+  loginAttempts Int           @default(0) // Track failed login attempts
+  lockedUntil   DateTime?     // Account lockout until this time
+  
+  // Password reset tracking
+  passwordResetRequested DateTime?
+  passwordResetCompleted DateTime?
+
+  sessions      Session[]
+  activities    UserActivity[]
+  @@schema("sys_user")
+}
+
+enum UserRole {
+  ADMIN
+  CHIEF_COUNCIL
+  @@schema("sys_user")
+}
+
+enum Department {
+  OFFICE_ADMIN
+  COUNCIL
+  @@schema("sys_user")
+}
+
+model UserActivity {
+  id          String   @id @default(cuid())
+  userId      String
+  action      String   // "login", "logout", "create_member", "edit_member", "delete_member", "view_dashboard", etc.
+  details     String?  // Additional context (member ID, section accessed, etc.)
+  timestamp   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([timestamp])
+  @@index([action])
+  @@schema("sys_user")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  created      DateTime @default(now())
+  access_token String?
+  refresh_token String?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@schema("sys_user")
+}

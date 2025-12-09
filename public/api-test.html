@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .endpoint { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .result { background: #f5f5f5; padding: 10px; margin: 5px 0; white-space: pre-wrap; }
+        button { padding: 5px 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>TCN Central DB API Test</h1>
+    
+    <div class="endpoint">
+        <h3>Stats</h3>
+        <button onclick="testStats()">Test /api/v1/stats</button>
+        <div id="stats-result" class="result"></div>
+    </div>
+    
+    <div class="endpoint">
+        <h3>Communities</h3>
+        <button onclick="testCommunities()">Test /api/v1/communities</button>
+        <div id="communities-result" class="result"></div>
+    </div>
+    
+    <div class="endpoint">
+        <h3>Members</h3>
+        <button onclick="testMembers()">Test /api/v1/members (limit 3)</button>
+        <div id="members-result" class="result"></div>
+    </div>
+    
+    <script>
+        async function testEndpoint(url, resultId) {
+            try {
+                const response = await fetch(url, {
+                    headers: { 'x-api-key': 'test' }
+                });
+                const data = await response.json();
+                document.getElementById(resultId).textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById(resultId).textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        function testStats() {
+            testEndpoint('/api/v1/stats', 'stats-result');
+        }
+        
+        function testCommunities() {
+            testEndpoint('/api/v1/communities', 'communities-result');
+        }
+        
+        function testMembers() {
+            testEndpoint('/api/v1/members?limit=3', 'members-result');
+        }
+    </script>
+</body>
+</html>
