@@ -6,7 +6,10 @@
     "dev": "next dev --turbopack --port 4001",
     "build": "next build --turbopack",
     "start": "next start --port 4001",
-    "import-barcodes": "tsx scripts/import-barcodes.ts"
+    "import-barcodes": "tsx scripts/import-barcodes.ts",
+    "import-council": "tsx scripts/import-council-members.ts",
+    "import-members": "tsx scripts/import-members.ts",
+    "assign-barcodes": "tsx scripts/assign-barcodes.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",

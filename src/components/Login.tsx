@@ -40,8 +40,12 @@ export default function Login() {
       const result = await login(formData);
 
       if (result.success && result.user) {
-        // Redirect all users to /Home regardless of role
-        router.push("/Home");
+        // Redirect based on user role/department
+        if (result.user.role === 'CHIEF_COUNCIL' || result.user.department === 'COUNCIL') {
+          router.push("/Chief&Council");
+        } else {
+          router.push("/Home");
+        }
       } else {
         setError(result.error || "Login failed. Please try again.");
       }

@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["fnmemberlist","sys_user"]
+  schemas  = ["fnmemberlist","sys_user", "governance"]
 }
 
 model fnmember {
@@ -133,4 +133,64 @@ model Session {
   refresh_token String?
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@schema("sys_user")
+}
+
+// ==================== Chief & Council ====================
+
+model Current_Council{
+  id          String        @id @default(cuid())
+  created     DateTime      @default(now())
+  updated     DateTime      @default(now()) @updatedAt
+  council_start DateTime  
+  council_end   DateTime
+  members Council_Member[]
+  history Council_History[]
+   // Fields for sync with master database
+  sourceId    String?       @unique  // ID from the master database
+  @@schema("governance")
+}
+
+model Council_Member{
+  id          String        @id @default(cuid())
+  created     DateTime      @default(now())
+  updated     DateTime      @default(now()) @updatedAt
+  position    Positions     @default(CHIEF)
+  first_name  String
+  last_name   String
+  portfolios  Portfolios[]  // Array of portfolios (up to 4)
+  email       String
+  phone       String
+  bio         String?
+  image_url   String?       // URL to profile photo
+  councilId   String?
+  sourceId    String?       @unique  // ID from the master database for sync
+  Current_Council Current_Council? @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  @@schema("governance")
+}
+
+enum Positions{
+  CHIEF
+  COUNCILLOR
+  @@schema("governance")
+}
+
+enum Portfolios{
+  TREATY
+  HEALTH
+  EDUCATION
+  HOUSING
+  ECONOMIC_DEVELOPMENT
+  ENVIRONMENT
+  PUBLIC_SAFETY
+  LEADERSHIP
+  @@schema("governance")
+}
+
+model Council_History{
+  id          String        @id @default(cuid())
+  created     DateTime      @default(now())
+  updated     DateTime      @default(now()) @updatedAt
+  councilId   String?
+  Current_Council Current_Council? @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  @@schema("governance")
 }
