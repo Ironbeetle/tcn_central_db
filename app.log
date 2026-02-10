@@ -1,0 +1,21 @@
+
+> tcn_central_db@0.1.0 dev
+> next dev --turbopack --port 4001
+
+   ▲ Next.js 15.5.6 (Turbopack)
+   - Local:        http://localhost:4001
+   - Network:      http://10.0.0.90:4001
+   - Environments: .env.local, .env
+   - Experiments (use with caution):
+     · serverActions
+
+ ✓ Starting...
+ ✓ Compiled middleware in 425ms
+ ✓ Ready in 2.2s
+ ○ Compiling / ...
+ ✓ Compiled / in 4.7s
+ GET / 200 in 5461ms
+ GET / 200 in 250ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 909ms
+ GET /api/auth/session 200 in 2175ms

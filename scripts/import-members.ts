@@ -28,15 +28,7 @@ const prisma = new PrismaClient()
 const VALID_ACTIVATION_STATUS: ActivationStatus[] = ['NONE', 'PENDING', 'ACTIVATED']
 
 interface MemberCSV {
-  id: string
-  created: string
-  updated: string
-  birthdate: string
-  first_name: string
-  last_name: string
-  t_number: string
-  activated: string
-  deceased: string
+  [key: string]: string
 }
 
 function parseCSVLine(line: string): string[] {
@@ -106,17 +98,26 @@ async function importMembers() {
       console.log('📋 Using IDs from CSV file\n')
     }
     
-    // Read CSV file
-    const csvPath = join(process.cwd(), 'memberlistNEW.csv')
-    console.log(`📄 Reading CSV file: memberlistNEW.csv`)
-    
+    // Determine CSV file to read. Prefer BARCODE_REFERENCE/master_normalized.csv
+    const barcodeMasterPath = join(process.cwd(), 'BARCODE_REFERENCE', 'master_normalized.csv')
+    const rootPath = join(process.cwd(), 'memberlistNEW.csv')
+
+    let csvPath = barcodeMasterPath
     let fileContent: string
     try {
       fileContent = await readFile(csvPath, 'utf-8')
-    } catch (error) {
-      console.log('\n❌ Could not read memberlistNEW.csv')
-      console.log('   Make sure the file exists in the project root directory.')
-      return
+      console.log(`📄 Reading CSV file: BARCODE_REFERENCE/master_normalized.csv`)
+    } catch (err1) {
+      // Fall back to root CSV
+      csvPath = rootPath
+      try {
+        fileContent = await readFile(csvPath, 'utf-8')
+        console.log(`📄 Reading CSV file: memberlistNEW.csv`)
+      } catch (err2) {
+        console.log('\n❌ Could not read memberlistNEW.csv or BARCODE_REFERENCE/master_normalized.csv')
+        console.log('   Make sure one of the CSV files exists in the project root or BARCODE_REFERENCE folder.')
+        return
+      }
     }
     
     // Parse CSV
@@ -128,9 +129,9 @@ async function importMembers() {
     }
     
     // Get headers
-    const headers = parseCSVLine(lines[0])
+    const headers = parseCSVLine(lines[0]).map(h => h.trim())
     console.log(`   Headers: ${headers.join(', ')}`)
-    
+
     // Parse data rows
     const dataRows = lines.slice(1)
     console.log(`   Found ${dataRows.length} member rows\n`)
@@ -157,19 +158,24 @@ async function importMembers() {
       if (!row.trim()) continue
       
       const values = parseCSVLine(row)
-      
-      // Map values to headers
-      const member: MemberCSV = {
-        id: values[0] || '',
-        created: values[1] || '',
-        updated: values[2] || '',
-        birthdate: values[3] || '',
-        first_name: values[4] || '',
-        last_name: values[5] || '',
-        t_number: values[6] || '',
-        activated: values[7] || '',
-        deceased: values[8] || ''
+
+      // Map values to headers by name (robust to different column orders)
+      const member: MemberCSV = {}
+      for (let j = 0; j < headers.length; j++) {
+        const key = headers[j] || `col_${j}`
+        member[key] = (values[j] || '').trim()
       }
+
+      // Support older format columns (id,created,updated) if missing
+      member.id = member.id || ''
+      member.created = member.created || ''
+      member.updated = member.updated || ''
+      member.birthdate = member.birthdate || ''
+      member.first_name = member.first_name || member.first || ''
+      member.last_name = member.last_name || member.surname || ''
+      member.t_number = member.t_number || member.tno || member.t || ''
+      member.activated = member.activated || ''
+      member.deceased = member.deceased || ''
       
       const displayName = `${member.first_name} ${member.last_name}`
       const rowNum = i + 2 // +2 because of header and 0-index

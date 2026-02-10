@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth-actions'
 import ProfileEditorClient from '@/components/governance/ProfileEditorClient'
 
+export const dynamic = 'force-dynamic';
+
 export default async function ProfileEditorPage() {
   // Server-side auth check
   const user = await getCurrentUser()

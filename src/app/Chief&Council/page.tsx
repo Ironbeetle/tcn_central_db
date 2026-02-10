@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { Button } from '@/components/ui/button';
+
+export const dynamic = 'force-dynamic';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { LogOut, BarChart3, Edit, Users, FileText, Shield, Search } from 'lucide-react';
@@ -124,7 +126,7 @@ export default async function ChiefCouncilPage() {
           </Card>
 
           {/* Member Lookup Card */}
-          <Card className="border-0 bg-gradient-to-br from-white/80 to-slate-100/80 dark:from-slate-800/80 dark:to-slate-700/80 backdrop-blur-sm hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
+          {/* <Card className="border-0 bg-gradient-to-br from-white/80 to-slate-100/80 dark:from-slate-800/80 dark:to-slate-700/80 backdrop-blur-sm hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
             <CardContent className="p-6">
               <Link 
                 href="/Editor" 
@@ -141,7 +143,7 @@ export default async function ChiefCouncilPage() {
                 </p>
               </Link>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
         {/* Info Panel */}

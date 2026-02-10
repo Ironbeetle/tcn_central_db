@@ -6,6 +6,10 @@ import { generateStatsData } from '@/lib/api-transformers';
 async function handleGetStats(req: NextRequest) {
   try {
     // Use aggregation queries for better performance
+    // Calculate the date 18 years ago for filtering
+    const eighteenYearsAgo = new Date();
+    eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
     const [
       totalMembers,
       deceasedMembers, 
@@ -14,7 +18,8 @@ async function handleGetStats(req: NextRequest) {
       ageStats,
       recentAdditions,
       totalBarcodes,
-      availableBarcodes
+      availableBarcodes,
+      membersOver18
     ] = await Promise.all([
       // Total members
       prisma.fnmember.count(),
@@ -66,6 +71,13 @@ async function handleGetStats(req: NextRequest) {
           activated: 1,
           fnmemberId: null,
         }
+      }),
+      
+      // Members 18 years or older (eligible for portal sync)
+      prisma.fnmember.count({
+        where: {
+          birthdate: { lte: eighteenYearsAgo }
+        }
       })
     ]);
     
@@ -105,6 +117,8 @@ async function handleGetStats(req: NextRequest) {
       total_members: totalMembers,
       active_members: totalMembers - deceasedMembers,
       deceased_members: deceasedMembers,
+      members_over_18: membersOver18,
+      members_under_18: totalMembers - membersOver18,
       on_reserve_count: onReserveMembers,
       off_reserve_count: totalMembers - onReserveMembers,
       communities,

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TCN Member Database
+GenericName=Member Database
+Comment=Launch TCN Member Database Application
+Exec=/home/tcn_technician/TCN_Member_DB/tcn_central_db/tcn-launcher.sh
+Path=/home/tcn_technician/TCN_Member_DB/tcn_central_db
+Icon=address-book-new
+Terminal=true
+Categories=Office;Database;
+StartupNotify=true
+Keywords=TCN;Member;Database;

@@ -16,6 +16,29 @@ import {
 } from './client';
 import type { SyncItem, PulledProfile, PulledFamily, SyncLog } from './types';
 
+// ==================== AGE FILTER HELPER ====================
+
+/**
+ * Calculate age from birthdate
+ */
+function calculateAge(birthdate: Date): number {
+  const today = new Date();
+  const birth = new Date(birthdate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+/**
+ * Check if member is 18 years or older (eligible for portal sync)
+ */
+function isEligibleForSync(birthdate: Date): boolean {
+  return calculateAge(birthdate) >= 18;
+}
+
 // ==================== STATUS & CONNECTION ====================
 
 export async function checkSyncStatus() {
@@ -53,6 +76,14 @@ export async function syncMemberToPortal(memberId: string) {
 
   if (!member) {
     return { success: false, error: 'Member not found' };
+  }
+
+  // Only sync members 18 years or older
+  if (!isEligibleForSync(member.birthdate)) {
+    return { 
+      success: false, 
+      error: `Member ${member.first_name} ${member.last_name} is under 18 and not eligible for portal sync` 
+    };
   }
 
   const profile = member.profile[0];
@@ -120,7 +151,19 @@ export async function batchPushMembersToPortal(memberIds: string[]) {
     },
   });
 
-  const items: SyncItem[] = members.map((member) => {
+  // Filter to only include members 18 years or older
+  const eligibleMembers = members.filter(member => isEligibleForSync(member.birthdate));
+  const excludedCount = members.length - eligibleMembers.length;
+
+  if (eligibleMembers.length === 0) {
+    return {
+      success: false,
+      error: 'No eligible members to sync (all members are under 18)',
+      data: { processed: 0, failed: 0, excluded: excludedCount },
+    };
+  }
+
+  const items: SyncItem[] = eligibleMembers.map((member) => {
     const profile = member.profile[0];
     const family = member.family[0];
     const barcode = member.barcode[0];
@@ -169,7 +212,17 @@ export async function batchPushMembersToPortal(memberIds: string[]) {
     };
   });
 
-  return batchSyncToPortal(items);
+  const result = await batchSyncToPortal(items);
+  
+  // Add excluded count to the result
+  if (result.data) {
+    result.data.excluded = excludedCount;
+  }
+  if (excludedCount > 0) {
+    result.message = `${result.message || 'Batch sync completed'}. ${excludedCount} member(s) under 18 excluded from sync.`;
+  }
+  
+  return result;
 }
 
 /**
@@ -177,7 +230,20 @@ export async function batchPushMembersToPortal(memberIds: string[]) {
  * Note: Portal has rate limit of 10 requests/minute for batch endpoint
  */
 export async function fullPushToPortal(batchSize: number = 100) {
-  const totalMembers = await prisma.fnmember.count();
+  // Calculate the date 18 years ago for filtering
+  const eighteenYearsAgo = new Date();
+  eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
+  // Count only eligible members (18+)
+  const totalEligibleMembers = await prisma.fnmember.count({
+    where: {
+      birthdate: { lte: eighteenYearsAgo }
+    }
+  });
+  
+  const totalAllMembers = await prisma.fnmember.count();
+  const excludedUnder18 = totalAllMembers - totalEligibleMembers;
+
   let processed = 0;
   let failed = 0;
   const errors: string[] = [];
@@ -186,8 +252,8 @@ export async function fullPushToPortal(batchSize: number = 100) {
   // Helper to delay between batches (rate limit: 10 req/min = 1 req per 6 seconds)
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // Process in batches
-  for (let skip = 0; skip < totalMembers; skip += batchSize) {
+  // Process in batches - only members 18 years or older
+  for (let skip = 0; skip < totalEligibleMembers; skip += batchSize) {
     // Add delay between batches to respect rate limit (7 seconds to be safe)
     if (batchCount > 0) {
       await delay(7000);
@@ -195,6 +261,9 @@ export async function fullPushToPortal(batchSize: number = 100) {
     batchCount++;
 
     const members = await prisma.fnmember.findMany({
+      where: {
+        birthdate: { lte: eighteenYearsAgo }
+      },
       skip,
       take: batchSize,
       include: {
@@ -268,9 +337,246 @@ export async function fullPushToPortal(batchSize: number = 100) {
   return {
     success: processed > 0, // Success if any members were synced
     message: failed === 0 
-      ? `Full sync completed: ${processed} members synced successfully`
-      : `Full sync completed: ${processed} synced, ${failed} failed`,
-    data: { processed, failed, total: totalMembers, errors },
+      ? `Full sync completed: ${processed} members (18+) synced successfully. ${excludedUnder18} members under 18 excluded.`
+      : `Full sync completed: ${processed} synced, ${failed} failed. ${excludedUnder18} members under 18 excluded.`,
+    data: { processed, failed, total: totalEligibleMembers, excluded: excludedUnder18, errors },
+  };
+}
+
+/**
+ * Incremental sync - only push members updated since a given date
+ * This is much faster than full sync and won't duplicate profile/family data
+ * 
+ * @param since - Only sync members updated after this date
+ * @param includeRelations - Whether to include profile/family/barcode data (default: false for member-only sync)
+ * @param batchSize - Number of members per batch (default: 100)
+ */
+export async function incrementalPushToPortal(
+  since: Date,
+  includeRelations: boolean = false,
+  batchSize: number = 100
+) {
+  // Calculate the date 18 years ago for filtering
+  const eighteenYearsAgo = new Date();
+  eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
+  // Find members updated since the given date who are 18+
+  const updatedMembers = await prisma.fnmember.findMany({
+    where: {
+      birthdate: { lte: eighteenYearsAgo },
+      updated: { gt: since }
+    },
+    include: includeRelations ? {
+      profile: true,
+      barcode: true,
+      family: true,
+    } : undefined,
+    orderBy: { updated: 'asc' },
+  });
+
+  if (updatedMembers.length === 0) {
+    return {
+      success: true,
+      message: 'No members have been updated since the specified date.',
+      data: { processed: 0, failed: 0, total: 0 },
+    };
+  }
+
+  let processed = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  let batchCount = 0;
+
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Process in batches
+  for (let i = 0; i < updatedMembers.length; i += batchSize) {
+    if (batchCount > 0) {
+      await delay(7000); // Rate limit
+    }
+    batchCount++;
+
+    const batch = updatedMembers.slice(i, i + batchSize);
+
+    const items: SyncItem[] = batch.map((member) => {
+      // Base member data (always included)
+      const data: Record<string, any> = {
+        id: member.id,
+        created: member.created.toISOString(),
+        updated: member.updated.toISOString(),
+        birthdate: member.birthdate.toISOString(),
+        first_name: member.first_name,
+        last_name: member.last_name,
+        t_number: member.t_number,
+        deceased: member.deceased,
+        activated: member.activated,
+      };
+
+      // Only include relations if requested (to avoid duplicating portal-edited data)
+      if (includeRelations && member.profile) {
+        const profile = (member.profile as any)[0];
+        if (profile) {
+          data.profile = {
+            id: profile.id,
+            fnmemberId: member.id, // Include fnmemberId for proper upsert on portal
+            created: profile.created.toISOString(),
+            updated: profile.updated.toISOString(),
+            gender: profile.gender,
+            o_r_status: profile.o_r_status,
+            community: profile.community,
+            address: profile.address,
+            phone_number: profile.phone_number,
+            email: profile.email,
+            image_url: profile.image_url,
+          };
+        }
+      }
+
+      if (includeRelations && member.barcode) {
+        const barcode = (member.barcode as any)[0];
+        if (barcode) {
+          data.barcode = {
+            id: barcode.id,
+            fnmemberId: member.id,
+            created: barcode.created.toISOString(),
+            updated: barcode.updated.toISOString(),
+            barcode: barcode.barcode,
+            activated: barcode.activated,
+          };
+        }
+      }
+
+      if (includeRelations && member.family) {
+        const family = (member.family as any)[0];
+        if (family) {
+          data.family = {
+            id: family.id,
+            fnmemberId: member.id,
+            created: family.created.toISOString(),
+            updated: family.updated.toISOString(),
+            spouse_fname: family.spouse_fname,
+            spouse_lname: family.spouse_lname,
+            dependents: family.dependents,
+          };
+        }
+      }
+
+      return {
+        operation: 'UPSERT' as const,
+        model: 'fnmember' as const,
+        data,
+      };
+    });
+
+    const result = await batchSyncToPortal(items);
+
+    if (result.success && result.data) {
+      processed += result.data.processed;
+      failed += result.data.failed;
+      if (result.data.errors && result.data.errors.length > 0) {
+        for (const err of result.data.errors) {
+          const member = batch[err.index];
+          errors.push(`Member ${member?.first_name} ${member?.last_name} (${member?.t_number}): ${err.error}`);
+        }
+      }
+    } else {
+      failed += items.length;
+      errors.push(result.error || 'Unknown error');
+    }
+  }
+
+  return {
+    success: processed > 0,
+    message: failed === 0
+      ? `Incremental sync completed: ${processed} updated members synced successfully.`
+      : `Incremental sync completed: ${processed} synced, ${failed} failed.`,
+    data: { processed, failed, total: updatedMembers.length, errors },
+  };
+}
+
+/**
+ * Push only member core data (no profile/family) to avoid overwriting portal edits
+ * Useful for syncing newly added members or member field updates only
+ */
+export async function pushMemberOnlyToPortal(batchSize: number = 100) {
+  const eighteenYearsAgo = new Date();
+  eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
+  const totalEligibleMembers = await prisma.fnmember.count({
+    where: { birthdate: { lte: eighteenYearsAgo } }
+  });
+
+  let processed = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  let batchCount = 0;
+
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  for (let skip = 0; skip < totalEligibleMembers; skip += batchSize) {
+    if (batchCount > 0) {
+      await delay(7000);
+    }
+    batchCount++;
+
+    const members = await prisma.fnmember.findMany({
+      where: { birthdate: { lte: eighteenYearsAgo } },
+      skip,
+      take: batchSize,
+      include: {
+        barcode: true, // Include barcode since it's managed by master DB
+      },
+    });
+
+    const items: SyncItem[] = members.map((member) => ({
+      operation: 'UPSERT',
+      model: 'fnmember',
+      data: {
+        id: member.id,
+        created: member.created.toISOString(),
+        updated: member.updated.toISOString(),
+        birthdate: member.birthdate.toISOString(),
+        first_name: member.first_name,
+        last_name: member.last_name,
+        t_number: member.t_number,
+        deceased: member.deceased,
+        activated: member.activated,
+        // Include barcode since it's assigned by master DB
+        barcode: member.barcode[0] ? {
+          id: member.barcode[0].id,
+          fnmemberId: member.id,
+          created: member.barcode[0].created.toISOString(),
+          updated: member.barcode[0].updated.toISOString(),
+          barcode: member.barcode[0].barcode,
+          activated: member.barcode[0].activated,
+        } : undefined,
+        // Explicitly NOT including profile and family - those are managed by portal
+      },
+    }));
+
+    const result = await batchSyncToPortal(items);
+
+    if (result.success && result.data) {
+      processed += result.data.processed;
+      failed += result.data.failed;
+      if (result.data.errors && result.data.errors.length > 0) {
+        for (const err of result.data.errors) {
+          const member = members[err.index];
+          errors.push(`Member ${member?.first_name} ${member?.last_name} (${member?.t_number}): ${err.error}`);
+        }
+      }
+    } else {
+      failed += items.length;
+      errors.push(result.error || 'Unknown error');
+    }
+  }
+
+  return {
+    success: processed > 0,
+    message: failed === 0
+      ? `Member-only sync completed: ${processed} members synced (profile/family excluded).`
+      : `Member-only sync completed: ${processed} synced, ${failed} failed.`,
+    data: { processed, failed, total: totalEligibleMembers, errors },
   };
 }
 
@@ -460,11 +766,16 @@ export async function markMemberDeceasedAndSync(
  * Get local sync statistics
  */
 export async function getLocalSyncStats() {
+  // Calculate the date 18 years ago for filtering
+  const eighteenYearsAgo = new Date();
+  eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+
   const [
     totalMembers,
     activatedMembers,
     pendingMembers,
     deceasedMembers,
+    membersOver18,
     totalProfiles,
     totalBarcodes,
     totalFamilies,
@@ -473,6 +784,7 @@ export async function getLocalSyncStats() {
     prisma.fnmember.count({ where: { activated: 'ACTIVATED' } }),
     prisma.fnmember.count({ where: { activated: 'PENDING' } }),
     prisma.fnmember.count({ where: { deceased: 'yes' } }),
+    prisma.fnmember.count({ where: { birthdate: { lte: eighteenYearsAgo } } }),
     prisma.profile.count(),
     prisma.barcode.count(),
     prisma.family.count(),
@@ -495,6 +807,8 @@ export async function getLocalSyncStats() {
       pending: pendingMembers,
       notActivated: totalMembers - activatedMembers - pendingMembers,
       deceased: deceasedMembers,
+      over18: membersOver18,
+      under18: totalMembers - membersOver18,
     },
     profiles: totalProfiles,
     barcodes: totalBarcodes,

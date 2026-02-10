@@ -40,6 +40,7 @@ model Profile{
   o_r_status   String
   community    String
   address      String
+  province     ProvinceTerritory @default(MB)
   phone_number String
   email        String
   image_url    String?
@@ -47,6 +48,25 @@ model Profile{
   fnmember     fnmember? @relation(fields: [fnmemberId], references: [id], onDelete: Cascade)
   @@schema("fnmemberlist")
 }
+
+
+enum ProvinceTerritory{
+  AB
+  BC
+  MB
+  NB
+  NL
+  NS
+  NT
+  NU
+  ON
+  PE
+  QC
+  SK
+  YT
+  @@schema("fnmemberlist")
+}
+
 
 model Barcode {
   id         String   @id @default(cuid())

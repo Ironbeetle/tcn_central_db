@@ -55,6 +55,7 @@ export interface BatchSyncResult {
   processed: number;
   failed: number;
   total: number;
+  excluded?: number;
   errors?: Array<{
     index: number;
     operation: SyncOperation;

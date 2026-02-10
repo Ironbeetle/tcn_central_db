@@ -7,13 +7,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   syncMemberToPortal, 
   batchPushMembersToPortal, 
-  fullPushToPortal 
+  fullPushToPortal,
+  incrementalPushToPortal,
+  pushMemberOnlyToPortal
 } from '@/lib/sync/actions';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { type, memberIds, memberId, batchSize } = body;
+    const { type, memberIds, memberId, batchSize, since, includeRelations } = body;
 
     let result;
 
@@ -42,9 +44,29 @@ export async function POST(req: NextRequest) {
         result = await fullPushToPortal(batchSize || 100);
         break;
 
+      case 'incremental':
+        // Incremental sync - only members updated since a given date
+        if (!since) {
+          return NextResponse.json(
+            { success: false, error: 'since date is required for incremental push' },
+            { status: 400 }
+          );
+        }
+        result = await incrementalPushToPortal(
+          new Date(since),
+          includeRelations ?? false,
+          batchSize || 100
+        );
+        break;
+
+      case 'member-only':
+        // Push only member + barcode data (no profile/family)
+        result = await pushMemberOnlyToPortal(batchSize || 100);
+        break;
+
       default:
         return NextResponse.json(
-          { success: false, error: 'Invalid type. Use: single, batch, or full' },
+          { success: false, error: 'Invalid type. Use: single, batch, full, incremental, or member-only' },
           { status: 400 }
         );
     }

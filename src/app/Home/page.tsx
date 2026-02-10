@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { Button } from '@/components/ui/button';
+
+export const dynamic = 'force-dynamic';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { LogOut, BarChart3, Edit, Users, RefreshCcw } from 'lucide-react';

@@ -47,6 +47,7 @@ async function handleMember(req: NextRequest) {
               phone_number: true,
               address: true,
               community: true,
+              province: true,
               o_r_status: true,
               image_url: true,
               fnmemberId: true,

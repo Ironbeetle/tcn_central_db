@@ -34,9 +34,10 @@ async function portalFetch<T>(
   body?: any
 ): Promise<SyncResponse<T>> {
   const { apiKey, apiUrl } = getConfig();
+  const fullUrl = `${apiUrl}${endpoint}`;
 
   try {
-    const response = await fetch(`${apiUrl}${endpoint}`, {
+    const response = await fetch(fullUrl, {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -44,6 +45,25 @@ async function portalFetch<T>(
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      // Check if it's an HTML response (common for 404/error pages)
+      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+        return {
+          success: false,
+          error: `Portal returned HTML instead of JSON (HTTP ${response.status}). This usually means the sync endpoint is not available or the URL is incorrect.`,
+          details: `URL: ${fullUrl} - Check that the portal server is running and the PORTAL_API_URL is correct.`,
+        };
+      }
+      return {
+        success: false,
+        error: `Unexpected response format from portal (HTTP ${response.status})`,
+        details: text.substring(0, 200),
+      };
+    }
 
     const data = await response.json();
 
@@ -57,9 +77,11 @@ async function portalFetch<T>(
 
     return data as SyncResponse<T>;
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Network error';
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Network error',
+      error: errorMessage,
+      details: `Failed to connect to ${fullUrl}. Please verify the portal is accessible and the PORTAL_API_URL environment variable is correct.`,
     };
   }
 }

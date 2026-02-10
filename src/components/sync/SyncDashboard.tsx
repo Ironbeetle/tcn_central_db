@@ -25,6 +25,8 @@ interface MemberStats {
   pending: number;
   notActivated: number;
   deceased: number;
+  over18?: number;
+  under18?: number;
 }
 
 interface LocalStats {
@@ -45,6 +47,7 @@ interface PortalStatusData {
   database: {
     connected: boolean;
     schema: string;
+    error?: string | null;
   };
   stats: {
     members: MemberStats;
@@ -94,13 +97,13 @@ export default function SyncDashboard() {
     fetchStatus();
   }, []);
 
-  const handlePush = async (type: 'full') => {
-    setSyncing('push');
+  const handlePush = async (type: 'full' | 'member-only' | 'incremental', options?: { since?: string }) => {
+    setSyncing(`push-${type}`);
     try {
       const response = await fetch('/api/sync/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type }),
+        body: JSON.stringify({ type, ...options }),
       });
       const result = await response.json();
       
@@ -227,6 +230,12 @@ export default function SyncDashboard() {
                 <div className="text-xs text-gray-500">Total Members</div>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
+                <div className="text-2xl font-bold text-indigo-600">
+                  {syncData?.local.members.over18 || 0}
+                </div>
+                <div className="text-xs text-gray-500">Eligible for Sync (18+)</div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
                 <div className="text-2xl font-bold text-green-600">
                   {syncData?.local.members.activated || 0}
                 </div>
@@ -237,12 +246,6 @@ export default function SyncDashboard() {
                   {syncData?.local.members.pending || 0}
                 </div>
                 <div className="text-xs text-gray-500">Pending</div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3">
-                <div className="text-2xl font-bold text-gray-600">
-                  {syncData?.local.profiles || 0}
-                </div>
-                <div className="text-xs text-gray-500">Profiles</div>
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -294,6 +297,21 @@ export default function SyncDashboard() {
                   Last updated: {formatDate(syncData.sync.portalStats.lastUpdated?.member)}
                 </div>
               </>
+            ) : isConnected && syncData?.sync.portalStats && !syncData.sync.portalStats.healthy ? (
+              <div className="text-center py-6 space-y-2">
+                <div className="flex items-center justify-center gap-2 text-red-600">
+                  <XCircle className="h-5 w-5" />
+                  <span className="font-medium">Portal Database Error</span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  {syncData.sync.portalStats.database?.error 
+                    ? 'Database tables missing - run migrations on the portal server'
+                    : 'Portal is connected but database is unhealthy'}
+                </p>
+                <p className="text-xs text-gray-400">
+                  Run: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">npx prisma migrate deploy</code> on the VPS
+                </p>
+              </div>
             ) : (
               <div className="text-center text-gray-500 py-8">
                 {!syncData?.sync.configured 
@@ -322,20 +340,55 @@ export default function SyncDashboard() {
                 Push to Portal (Master → Portal)
               </h3>
               <p className="text-sm text-gray-500">
-                Send all member data from master database to the portal.
+                Send member data from master database to the portal.
+                <span className="block mt-1 text-indigo-600 font-medium">
+                  Only members 18 years or older will be synced.
+                </span>
               </p>
-              <Button
-                onClick={() => handlePush('full')}
-                disabled={!isConnected || syncing !== null}
-                className="w-full"
-              >
-                {syncing === 'push' ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4 mr-2" />
-                )}
-                Full Push to Portal
-              </Button>
+              <div className="space-y-2">
+                <Button
+                  onClick={() => handlePush('member-only')}
+                  disabled={!isConnected || syncing !== null}
+                  className="w-full"
+                >
+                  {syncing === 'push-member-only' ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  Sync Members + Barcodes Only
+                </Button>
+                <p className="text-xs text-gray-400 text-center">
+                  Recommended: Won&apos;t overwrite portal profile/family edits
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      // Sync members updated in the last 24 hours
+                      const since = new Date();
+                      since.setHours(since.getHours() - 24);
+                      handlePush('incremental', { since: since.toISOString() });
+                    }}
+                    disabled={!isConnected || syncing !== null}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                  >
+                    {syncing === 'push-incremental' && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                    Last 24h Only
+                  </Button>
+                  <Button
+                    onClick={() => handlePush('full')}
+                    disabled={!isConnected || syncing !== null}
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1"
+                  >
+                    {syncing === 'push-full' && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                    Full Sync (All Data)
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {/* Pull Section */}

@@ -2,8 +2,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getFnMembers, getUnassignedBarcodes } from '@/lib/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, UserPlus, CreditCard, UserCheck } from 'lucide-react';
-import { format, subDays, isAfter } from 'date-fns';
+import { Users, UserPlus, CreditCard, UserCheck, CloudUpload } from 'lucide-react';
+import { format, subDays, isAfter, differenceInYears } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 export default function MemberStatistics() {
@@ -61,6 +61,13 @@ export default function MemberStatistics() {
 
   const availableBarcodes = unassignedBarcodes.length;
 
+  // Calculate members 18 years or older (eligible for portal sync)
+  const membersOver18 = members.filter(member => {
+    if (!member.birthdate) return false;
+    const age = differenceInYears(new Date(), new Date(member.birthdate));
+    return age >= 18;
+  }).length;
+
   const stats = [
     {
       title: "Total Members",
@@ -69,6 +76,14 @@ export default function MemberStatistics() {
       description: "Registered community members",
       gradient: "from-blue-500 to-blue-600",
       bgGradient: "from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20"
+    },
+    {
+      title: "Members 18+",
+      value: membersOver18,
+      icon: CloudUpload,
+      description: "Eligible for portal sync",
+      gradient: "from-indigo-500 to-indigo-600",
+      bgGradient: "from-indigo-50 to-indigo-100 dark:from-indigo-900/20 dark:to-indigo-800/20"
     },
     {
       title: "New This Month",
@@ -105,7 +120,7 @@ export default function MemberStatistics() {
         <p className="text-slate-600 dark:text-slate-300 mt-1">Overview of community member data</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {stats.map((stat) => {
           const IconComponent = stat.icon;
           return (
