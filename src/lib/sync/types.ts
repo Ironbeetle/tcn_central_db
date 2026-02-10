@@ -22,7 +22,7 @@ export interface SyncResponse<T = any> {
   message?: string;
   error?: string;
   data?: T;
-  details?: Array<{ path: string[]; message: string }>;
+  details?: string | Array<{ path: string[]; message: string }>;
 }
 
 export interface SyncStatusData {

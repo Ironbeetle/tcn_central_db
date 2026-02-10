@@ -413,8 +413,8 @@ export async function incrementalPushToPortal(
       };
 
       // Only include relations if requested (to avoid duplicating portal-edited data)
-      if (includeRelations && member.profile) {
-        const profile = (member.profile as any)[0];
+      if (includeRelations && (member as any).profile) {
+        const profile = (member as any).profile[0];
         if (profile) {
           data.profile = {
             id: profile.id,
@@ -432,8 +432,8 @@ export async function incrementalPushToPortal(
         }
       }
 
-      if (includeRelations && member.barcode) {
-        const barcode = (member.barcode as any)[0];
+      if (includeRelations && (member as any).barcode) {
+        const barcode = (member as any).barcode[0];
         if (barcode) {
           data.barcode = {
             id: barcode.id,
@@ -446,8 +446,8 @@ export async function incrementalPushToPortal(
         }
       }
 
-      if (includeRelations && member.family) {
-        const family = (member.family as any)[0];
+      if (includeRelations && (member as any).family) {
+        const family = (member as any).family[0];
         if (family) {
           data.family = {
             id: family.id,
