@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -152,15 +152,24 @@ export default function ProfileEditorClient() {
     fetchCouncilData()
   }, [])
 
-  // Update council form data when council changes
-  useEffect(() => {
+  // Update council form data when council changes - use callback form to avoid need for effect
+  const councilDates = useMemo(() => {
     if (council) {
-      setCouncilFormData({
+      return {
         council_start: new Date(council.council_start).toISOString().split('T')[0],
         council_end: new Date(council.council_end).toISOString().split('T')[0],
-      })
+      }
+    }
+    return {
+      council_start: new Date().toISOString().split('T')[0],
+      council_end: new Date(new Date().getFullYear() + 4, new Date().getMonth(), new Date().getDate()).toISOString().split('T')[0],
     }
   }, [council])
+  
+  // Sync councilFormData with councilDates when council changes
+  useEffect(() => {
+    setCouncilFormData(councilDates)
+  }, [councilDates])
 
   const fetchCouncilData = async () => {
     setLoading(true)
@@ -183,16 +192,18 @@ export default function ProfileEditorClient() {
     }
   }
 
-  // Filter members by search term
-  const filteredMembers = members.filter(member => {
+  // Filter members by search term - MEMOIZED to prevent recalculation on every render
+  const filteredMembers = useMemo(() => {
     const searchLower = searchTerm.toLowerCase()
-    return (
-      member.first_name.toLowerCase().includes(searchLower) ||
-      member.last_name.toLowerCase().includes(searchLower) ||
-      member.email.toLowerCase().includes(searchLower) ||
-      member.position.toLowerCase().includes(searchLower)
-    )
-  })
+    return members.filter(member => {
+      return (
+        member.first_name.toLowerCase().includes(searchLower) ||
+        member.last_name.toLowerCase().includes(searchLower) ||
+        member.email.toLowerCase().includes(searchLower) ||
+        member.position.toLowerCase().includes(searchLower)
+      )
+    })
+  }, [members, searchTerm]);
 
   // Reset form
   const resetForm = () => {

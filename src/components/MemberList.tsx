@@ -2,6 +2,20 @@ import React from 'react';
 import { Trash2, User, Mail, Phone, MapPin, IdCard, Calendar, Users } from 'lucide-react';
 import type { FnMemberWithRelations } from '@/hooks/useFnMembers';
 
+// Move pure utility function outside component to prevent recreation on each render
+const calculateAge = (birthdate: Date) => {
+  const today = new Date();
+  const birth = new Date(birthdate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  
+  return age;
+};
+
 interface MembersListProps {
   members: FnMemberWithRelations[];
   onSelectMember: (member: FnMemberWithRelations) => void;
@@ -28,19 +42,6 @@ const MembersList: React.FC<MembersListProps> = ({
       </div>
     );
   }
-
-  const calculateAge = (birthdate: Date) => {
-    const today = new Date();
-    const birth = new Date(birthdate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    
-    return age;
-  };
 
   return (
     <div className="space-y-3">

@@ -314,7 +314,8 @@ function Editor() {
                             
                             {(selectedMember || isCreating) ? (
                                 <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
-                                    <MemberForm 
+                                    <MemberForm
+                                        key={isCreating ? 'create' : selectedMember?.id || 'none'}
                                         member={selectedMember} 
                                         isCreating={isCreating}
                                         availableBarcodes={barcodesList}

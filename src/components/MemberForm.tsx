@@ -138,36 +138,28 @@ const MemberForm: React.FC<MemberFormProps> = ({
   };
 
   const [activeTab, setActiveTab] = useState('personal');
-  const [formData, setFormData] = useState({
-    // fnmember fields only (simplified)
-    first_name: '',
-    last_name: '',
-    birthdate: '',
-    t_number: '',
-    deceased: '',
-  });
-
-  // Initialize form data when member changes
-  useEffect(() => {
+  
+  // Initialize form data directly from props - no useEffect needed since parent uses key prop
+  // to remount the component when member/isCreating changes
+  const [formData, setFormData] = useState(() => {
     if (member && !isCreating) {
-      setFormData({
+      return {
         first_name: member.first_name || '',
         last_name: member.last_name || '',
         birthdate: formatDateForInput(member.birthdate),
         t_number: member.t_number || '',
         deceased: member.deceased || '',
-      });
-    } else if (isCreating) {
-      // Reset form for new member
-      setFormData({
-        first_name: '',
-        last_name: '',
-        birthdate: '',
-        t_number: '',
-        deceased: '',
-      });
+      };
     }
-  }, [member, isCreating]);
+    // Default for new member
+    return {
+      first_name: '',
+      last_name: '',
+      birthdate: '',
+      t_number: '',
+      deceased: '',
+    };
+  });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

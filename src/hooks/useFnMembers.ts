@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useTransition } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { 
   getFnMembers,
@@ -17,112 +18,114 @@ export type FnMemberWithRelations = fnmember & {
   family: Family[];
 };
 
-
+// Query keys for cache management
+const QUERY_KEYS = {
+  members: (searchTerm: string) => ['fnmembers', searchTerm] as const,
+  barcodes: ['unassigned-barcodes'] as const,
+};
 
 export const useFnMembers = (searchTerm: string = '') => {
-  const [allMembers, setAllMembers] = useState<FnMemberWithRelations[]>([]);
-  const [barcodes, setBarcodes] = useState<Barcode[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [barcodesLoading, setBarcodesLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const queryClient = useQueryClient();
 
-  // Pagination and sorting state
+  // Pagination and sorting state (kept local since it's UI state)
   const [currentPage, setCurrentPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [sortBy, setSortBy] = useState('created');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Fetch members using your existing function
-  const refetchMembers = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
+  // Fetch members using TanStack Query
+  const {
+    data: membersData,
+    isLoading,
+    error,
+    refetch: refetchMembersQuery,
+  } = useQuery({
+    queryKey: QUERY_KEYS.members(searchTerm),
+    queryFn: async () => {
       const result = await getFnMembers(searchTerm);
-      if (result.success && result.data) {
-        setAllMembers(result.data);
-      } else {
-        throw new Error(result.error);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch members');
       }
-    } catch (err) {
-      console.error('Error fetching members:', err);
-      setError(err as Error);
-      toast.error('Failed to fetch members');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [searchTerm]);
-
-  // Fetch available barcodes using your existing function
-  const refetchBarcodes = useCallback(async () => {
-    setBarcodesLoading(true);
-    
-    try {
-      const result = await getUnassignedBarcodes();
-      if (result.success && result.data) {
-        setBarcodes(result.data);
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (err) {
-      console.error('Error fetching barcodes:', err);
-      toast.error('Failed to fetch barcodes');
-    } finally {
-      setBarcodesLoading(false);
-    }
-  }, []);
-
-  // Client-side sorting
-  const sortedMembers = [...allMembers].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    
-    switch (sortBy) {
-      case 'name':
-        aValue = a.first_name.toLowerCase();
-        bValue = b.first_name.toLowerCase();
-        break;
-      case 'last_name':
-        aValue = a.last_name.toLowerCase();
-        bValue = b.last_name.toLowerCase();
-        break;
-      case 't_number':
-        aValue = a.t_number;
-        bValue = b.t_number;
-        break;
-      case 'birthdate':
-        aValue = new Date(a.birthdate);
-        bValue = new Date(b.birthdate);
-        break;
-      case 'community':
-        aValue = a.profile?.[0]?.community?.toLowerCase() || '';
-        bValue = b.profile?.[0]?.community?.toLowerCase() || '';
-        break;
-      case 'created':
-      default:
-        aValue = new Date(a.created);
-        bValue = new Date(b.created);
-        break;
-    }
-    
-    if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-    if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-    return 0;
+      return result.data as FnMemberWithRelations[];
+    },
+    staleTime: 30 * 1000, // Data fresh for 30 seconds
+    gcTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
-  // Client-side pagination
+  // Fetch barcodes using TanStack Query
+  const {
+    data: barcodes = [],
+    isLoading: barcodesLoading,
+    refetch: refetchBarcodesQuery,
+  } = useQuery({
+    queryKey: QUERY_KEYS.barcodes,
+    queryFn: async () => {
+      const result = await getUnassignedBarcodes();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch barcodes');
+      }
+      return result.data as Barcode[];
+    },
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const allMembers = membersData ?? [];
+
+  // Client-side sorting - MEMOIZED to prevent recalculation on every render
+  const sortedMembers = useMemo(() => {
+    return [...allMembers].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      
+      switch (sortBy) {
+        case 'name':
+          aValue = a.first_name.toLowerCase();
+          bValue = b.first_name.toLowerCase();
+          break;
+        case 'last_name':
+          aValue = a.last_name.toLowerCase();
+          bValue = b.last_name.toLowerCase();
+          break;
+        case 't_number':
+          aValue = a.t_number;
+          bValue = b.t_number;
+          break;
+        case 'birthdate':
+          aValue = new Date(a.birthdate);
+          bValue = new Date(b.birthdate);
+          break;
+        case 'community':
+          aValue = a.profile?.[0]?.community?.toLowerCase() || '';
+          bValue = b.profile?.[0]?.community?.toLowerCase() || '';
+          break;
+        case 'created':
+        default:
+          aValue = new Date(a.created);
+          bValue = new Date(b.created);
+          break;
+      }
+      
+      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [allMembers, sortBy, sortOrder]);
+
+  // Client-side pagination - MEMOIZED
   const totalPages = Math.ceil(sortedMembers.length / limit);
-  const paginatedMembers = sortedMembers.slice((currentPage - 1) * limit, currentPage * limit);
+  const paginatedMembers = useMemo(() => {
+    return sortedMembers.slice((currentPage - 1) * limit, currentPage * limit);
+  }, [sortedMembers, currentPage, limit]);
   
-  const pagination = {
+  const pagination = useMemo(() => ({
     currentPage,
     totalPages,
     totalCount: sortedMembers.length,
     hasNextPage: currentPage < totalPages,
     hasPreviousPage: currentPage > 1,
     limit,
-  };
+  }), [currentPage, totalPages, sortedMembers.length, limit]);
 
   // Pagination functions
   const goToPage = useCallback((page: number) => {
@@ -162,193 +165,161 @@ export const useFnMembers = (searchTerm: string = '') => {
     setCurrentPage(1);
   }, [searchTerm]);
 
-  // Create member mutation
+  // Create member mutation with TanStack Query
+  const createMutationHook = useMutation({
+    mutationFn: async (data: CreateMemberData) => {
+      const result = await createFnMember(data);
+      
+      if (!result.success) {
+        if (result.error === 'Validation failed' && (result as any).details) {
+          const validationErrors = (result as any).details;
+          const fieldErrors = validationErrors.map((err: any) => `${err.path.join('.')}: ${err.message}`).join(', ');
+          throw new Error(`Validation failed: ${fieldErrors}`);
+        }
+        throw new Error(result.error || 'Failed to create member');
+      }
+      
+      return result.data as FnMemberWithRelations;
+    },
+    onSuccess: (newMember, variables) => {
+      // Optimistically update cache
+      queryClient.setQueryData<FnMemberWithRelations[]>(
+        QUERY_KEYS.members(searchTerm),
+        (old) => old ? [newMember, ...old] : [newMember]
+      );
+      
+      // Invalidate queries to refetch in background
+      queryClient.invalidateQueries({ queryKey: ['fnmembers'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.barcodes });
+      
+      setCurrentPage(1);
+      toast.success(`Member ${variables.first_name} ${variables.last_name} created successfully!`);
+    },
+    onError: (err: Error) => {
+      console.error('Create member error:', err);
+      
+      let errorMessage = err.message;
+      if (errorMessage.includes('Validation failed') || errorMessage.includes('required')) {
+        errorMessage = 'Please fill in all required fields correctly';
+      } else if (errorMessage.includes('T-number already exists')) {
+        errorMessage = 'This T-number is already in use. Please use a different T-number.';
+      } else if (errorMessage.includes('email')) {
+        errorMessage = 'Please enter a valid email address';
+      }
+      
+      toast.error(`Failed to create member: ${errorMessage}`);
+    },
+  });
+
+  // Update member mutation with TanStack Query
+  const updateMutationHook = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateMemberData> }) => {
+      const result = await updateFnMember(id, data);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update member');
+      }
+      
+      return result.data as FnMemberWithRelations;
+    },
+    onSuccess: (updatedMember) => {
+      // Optimistically update cache
+      queryClient.setQueryData<FnMemberWithRelations[]>(
+        QUERY_KEYS.members(searchTerm),
+        (old) => old?.map(member => member.id === updatedMember.id ? updatedMember : member)
+      );
+      
+      // Invalidate queries to refetch in background
+      queryClient.invalidateQueries({ queryKey: ['fnmembers'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.barcodes });
+      
+      toast.success('Member updated successfully!');
+    },
+    onError: (err: Error) => {
+      console.error('Update member error:', err);
+      toast.error(`Failed to update member: ${err.message}`);
+    },
+  });
+
+  // Delete member mutation with TanStack Query
+  const deleteMutationHook = useMutation({
+    mutationFn: async (id: string) => {
+      const result = await deleteFnMember(id);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete member');
+      }
+      
+      return id;
+    },
+    onSuccess: (deletedId) => {
+      // Optimistically update cache
+      queryClient.setQueryData<FnMemberWithRelations[]>(
+        QUERY_KEYS.members(searchTerm),
+        (old) => old?.filter(member => member.id !== deletedId)
+      );
+      
+      // Invalidate queries to refetch in background
+      queryClient.invalidateQueries({ queryKey: ['fnmembers'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.barcodes });
+      
+      toast.success('Member deleted successfully!');
+    },
+    onError: (err: Error) => {
+      console.error('Delete member error:', err);
+      toast.error(`Failed to delete member: ${err.message}`);
+    },
+  });
+
+  // Return shape matches original hook for backwards compatibility
   const createMutation = {
-    isPending,
-    mutateAsync: async (data: CreateMemberData): Promise<FnMemberWithRelations> => {
-      try {
-        const result = await createFnMember(data);
-        
-        if (!result.success) {
-          // Handle validation errors with more detail
-          if (result.error === 'Validation failed' && (result as any).details) {
-            const validationErrors = (result as any).details;
-            const fieldErrors = validationErrors.map((err: any) => `${err.path.join('.')}: ${err.message}`).join(', ');
-            throw new Error(`Validation failed: ${fieldErrors}`);
-          }
-          throw new Error(result.error || 'Failed to create member');
-        }
-
-        // Update local state immediately for better UX
-        const newMember = result.data as FnMemberWithRelations;
-        setAllMembers(prev => [newMember, ...prev]);
-        
-        // Reset to first page to show new member
-        setCurrentPage(1);
-        
-        console.log('Member created in hook, ID:', newMember.id);
-        
-        // Refetch in background to ensure consistency with API endpoints
-        // Add a small delay to ensure database transaction is fully committed
-        startTransition(async () => {
-          try {
-            // Small delay to ensure transaction commit is complete
-            await new Promise(resolve => setTimeout(resolve, 500));
-            await Promise.all([refetchMembers(), refetchBarcodes()]);
-            console.log('Refetch completed after member creation');
-          } catch (refetchError) {
-            console.warn('Failed to refetch data after member creation:', refetchError);
-            // Don't throw here - member was created successfully
-          }
-        });
-        
-        toast.success(`Member ${data.first_name} ${data.last_name} created successfully!`);
-        return newMember;
-        
-      } catch (err) {
-        console.error('Create member error:', {
-          error: err,
-          data,
-          timestamp: new Date().toISOString()
-        });
-
-        // Handle specific error types
-        if (err instanceof Error) {
-          let errorMessage = err.message;
-          
-          // Handle validation errors more gracefully
-          if (errorMessage.includes('Validation failed') || errorMessage.includes('required')) {
-            errorMessage = 'Please fill in all required fields correctly';
-          } else if (errorMessage.includes('T-number already exists')) {
-            errorMessage = 'This T-number is already in use. Please use a different T-number.';
-          } else if (errorMessage.includes('email')) {
-            errorMessage = 'Please enter a valid email address';
-          }
-          
-          toast.error(`Failed to create member: ${errorMessage}`);
-        } else {
-          toast.error('Failed to create member: Unknown error occurred');
-        }
-        
-        throw err;
-      }
-    }
+    isPending: createMutationHook.isPending,
+    mutateAsync: createMutationHook.mutateAsync,
   };
 
-  // Update member mutation
   const updateMutation = {
-    isPending,
-    mutateAsync: async ({ id, data }: { id: string; data: Partial<CreateMemberData> }): Promise<FnMemberWithRelations> => {
-      try {
-        const result = await updateFnMember(id, data);
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to update member');
-        }
-
-        // Update local state immediately
-        const updatedMember = result.data as FnMemberWithRelations;
-        setAllMembers(prev => 
-          prev.map(member => member.id === id ? updatedMember : member)
-        );
-        
-        // Refetch in background
-        startTransition(async () => {
-          try {
-            await Promise.all([refetchMembers(), refetchBarcodes()]);
-          } catch (refetchError) {
-            console.warn('Failed to refetch data after member update:', refetchError);
-          }
-        });
-        
-        toast.success('Member updated successfully!');
-        return updatedMember;
-        
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-        console.error('Update member error:', err);
-        toast.error(`Failed to update member: ${errorMessage}`);
-        throw err;
-      }
-    }
+    isPending: updateMutationHook.isPending,
+    mutateAsync: updateMutationHook.mutateAsync,
   };
 
-  // Delete member mutation
   const deleteMutation = {
-    isPending,
-    mutateAsync: async (id: string): Promise<void> => {
-      try {
-        const result = await deleteFnMember(id);
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to delete member');
-        }
-
-        // Update local state immediately
-        setAllMembers(prev => prev.filter(member => member.id !== id));
-        
-        // Refetch in background
-        startTransition(async () => {
-          try {
-            await Promise.all([refetchMembers(), refetchBarcodes()]);
-          } catch (refetchError) {
-            console.warn('Failed to refetch data after member deletion:', refetchError);
-          }
-        });
-        
-        toast.success('Member deleted successfully!');
-        
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-        console.error('Delete member error:', err);
-        toast.error(`Failed to delete member: ${errorMessage}`);
-        throw err;
-      }
-    }
+    isPending: deleteMutationHook.isPending,
+    mutateAsync: deleteMutationHook.mutateAsync,
   };
-
-  // Load data on mount and when search term changes
-  useEffect(() => {
-    refetchMembers();
-  }, [refetchMembers]);
-
-  useEffect(() => {
-    refetchBarcodes();
-  }, [refetchBarcodes]);
 
   // Return all the properties that the Editor page expects
   return {
     // Data
-    members: paginatedMembers, // Return paginated and sorted members
+    members: paginatedMembers,
     barcodes,
     pagination,
     
     // Loading states
     isLoading,
     barcodesLoading,
-    error,
+    error: error as Error | null,
     
     // Mutations
     createMutation,
     updateMutation,
     deleteMutation,
     
-    // Pagination functions - ALL OF THESE are now included
+    // Pagination functions
     goToPage,
     nextPage,
     previousPage,
     changeLimit,
     changeSorting,
     
-    // Current state - ALL OF THESE are now included
+    // Current state
     currentPage,
     limit,
     sortBy,
     sortOrder,
     
     // Refresh functions
-    refetchMembers,
-    refetchBarcodes,
+    refetchMembers: () => refetchMembersQuery(),
+    refetchBarcodes: () => refetchBarcodesQuery(),
   };
 };
 
